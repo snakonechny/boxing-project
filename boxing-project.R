@@ -155,12 +155,13 @@ master.copy$Fight.interval <- -c(NA, diff.Date(master.copy$Date.formatted)/86400
 champion.time <- master.copy %>% group_by(Fighter) %>% filter(Title == 1) %>% summarize('Title held' = sum(Fight.interval))
 champion.defense <- master.copy %>% group_by(Fighter) %>% filter(Title == 1) %>% summarize('Title held' = mean(Fight.interval))
 
-#Compile the wins/losses stats, along with withs by knock outs
+#Compile the wins/losses stats, along with wins by knock outs
 wins <- master.copy %>% group_by(Fighter) %>% filter(Res. == 'Win') %>% summarize(Wins = n())
 kos <- master.copy %>% group_by(Fighter) %>% filter(Type == 'KO') %>% summarize(KOs = n())
+wins.bouts <- (wins$Wins)/(rounds.bouts$Bouts)
 
-champion.stats <- cbind(rounds.bouts, title.fights$`Title defenses`, wins$Wins, kos$KOs, round(ARB, 2), champion.time$`Title held`, round(champion.defense$`Average defense, in days`, 2))
-colnames(champion.stats) <- c('Fighter', 'Rounds', 'Bouts', 'Title defenses', 'Wins', 'KOs', 'ARB', 'Title held, in days', 'Average defense, in days')
+champion.stats <- cbind(rounds.bouts, title.fights$`Title defenses`, wins$Wins, kos$KOs, round(ARB, 2), round(wins.bouts, 2), champion.time$`Title held`, round(champion.defense$`Average defense, in days`, 2))
+colnames(champion.stats) <- c('Fighter', 'Rounds', 'Bouts', 'Title defenses', 'Wins', 'KOs', 'ARB', 'Wins to Bouts ratio', 'Title held, in days', 'Average defense, in days')
 
 #MISSSING FRANK BRUNO
 # troublesome boxers - Ali (5), Terrell (6 - time issue), Frasier (7, same time problem), Foreman (9), Spinks (10 - one column is missing, rows 484-530), Coetzee (16), Spinks (21), Tyson (24), 
