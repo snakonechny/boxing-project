@@ -5,6 +5,10 @@ library(plyr)
 library(dplyr)
 library(lubridate)
 library(networkD3)
+library(tidyr)
+require(devtools)
+install_github('rCharts', 'ramnathv')
+library(rCharts)
 
 url <- "https://en.wikipedia.org/wiki/List_of_heavyweight_boxing_champions"
 
@@ -104,40 +108,54 @@ master.copy$Decade <- paste(str_sub(master.copy$Year, start = 1, end = 3), '0', 
 
 master.copy$Round <- trimws(str_sub(master.copy$Round, start = 1, end = 2))
 
-#Now try to mark the fights that involved a title contention 
+#Now try to mark the fights that involved a title contention, regardless of whether the boxer in question won or lost
 
 for (i in 1:nrow(master.copy)) {
-  res.check <- str_detect(master.copy$Res.[i], pattern = 'Win')
+  #res.check <- str_detect(master.copy$Res.[i], pattern = 'Win')
   title.check <- str_detect(master.copy$Notes[i], pattern = '[a-zA-Z]+itle')
   title.eliminator <- str_detect(master.copy$Notes[i], pattern = '[a-zA-Z]+liminator')
   title.heavyweight <- str_detect(master.copy$Notes[i], pattern = '[a-zA-Z]+eavyweight')
   
-  if (is.na(res.check)==FALSE && is.na(title.check)==FALSE) {                            
-    if ((res.check == TRUE) && (title.check == TRUE) && (title.eliminator == FALSE) && (title.heavyweight == TRUE)) {
+  if (is.na(title.check)==FALSE) {                            
+    if ((title.check == TRUE) && (title.eliminator == FALSE) && (title.heavyweight == TRUE)) {
       master.copy$Title[i] = 1
     }
   }
 }
-#Some of those title contentions, naturally, had to be matches where one boxer in the pair obtained his first recognized heavyweight belt, thus becoming a Heavyweight Boxing Champion of the World.
+
+
+#Some of those title contentions, naturally, had to be matches where one boxer in the pair obtained his recognized heavyweight belt, thus becoming a Heavyweight Boxing Champion of the World.
 #Picking these out is a bit tricky: for one, where money is also lives politics: high profile bouts attract sponsors, TV cameras, and audiences, and many "organizations" would like to award such high profile titles but carry no competitive weight behind them whatsoever. To simply things, we'll mark only fights sanctioned by the IBF, WBA, WBC, and WBO as world heavyweight contentions.
 #Before 1960s, however, these federations or organizations didn't exist as such. Heavyweight title was awarded by a number of other organizations of varying obscurity and was simply called "World Heavyweight" or "European Heavyweight" title. We'll include these filters also.
+#In other words, this loop will indicate every instance when any given fighter gained or regained (retained) a heavyweight title.
 
 for (i in 1:nrow(master.copy)) {
-  title.ibf <- str_detect(master.copy$Notes[i], pattern = 'IBF')
-  title.wbo <- str_detect(master.copy$Notes[i], pattern = 'WBO')
-  title.wba <- str_detect(master.copy$Notes[i], pattern = 'WBA')
-  title.wbc <- str_detect(master.copy$Notes[i], pattern = 'WBC')
-  title.world <- str_detect(master.copy$Notes[i], pattern = '[a-zA-Z]+orld [a-zA-Z]+eavyweight')
-  title.europe <- str_detect(master.copy$Notes[i], pattern = 'EBU')
-  title.retained <- str_detect(master.copy$Notes[i], pattern = "[a-zA-Z]+etained")
-  
-  if (master.copy$Title[i] == 1 && title.retained == FALSE && (title.ibf == TRUE | title.wba == TRUE | title.wba == TRUE | title.wbc == TRUE | title.world == TRUE | title.europe == TRUE)) {
+  world.title.check <- str_detect(master.copy$Notes[i], pattern = c("IBF", "WHO", "WBA", "WBC", "[a-zA-Z]+orld [a-zA-Z]+eavyweight", "EBU"))
+
+  if (is.na(world.title.check) == FALSE) {
+    if ((master.copy$Res.[i] == 'Win') && any(world.title.check == TRUE))  {
     master.copy$Title.hwc[i] = 1
-  }
-  else {
-    master.copy$Title.hwc[i] = 0
+    }
   }
 }
+
+#This will only mark the rows that represent retention fights (a situation in which a boxer possesses a title and successfully defends it)
+  
+for (i in 1:nrow(master.copy)) {
+    world.title.check <- str_detect(master.copy$Notes[i], pattern = c("IBF", "WHO", "WBA", "WBC", "[a-zA-Z]+orld [a-zA-Z]+eavyweight", "EBU"))
+    title.retained <- str_detect(master.copy$Notes[i], pattern = "[a-zA-Z]+etained")
+  if (is.na(world.title.check) == FALSE && is.na(title.retained) == FALSE) {
+    if (master.copy$Res.[i] == 'Win' && title.retained == TRUE && any(world.title.check == TRUE))  {
+      master.copy$Title.defense[i] = 1
+    }
+  }
+}
+  
+  
+if (master.copy$Title[i] == 1 & master.copy$Title.hwc[i] == 0) {
+master.copy$Title.defense = 1
+}
+
 
 #Now fix the dates, as they vary in format (those darn European editors of Wikipedia :))
 date.formats <- c('%d/%m/%Y', '%Y-%m-%d', '%B %d, %Y')
@@ -147,21 +165,53 @@ master.copy$Date.formatted <- parse_date_time(master.copy$Date, orders = date.fo
 #Count the number of bouts and rounds each champion has fought; we'll use dplyr for this
 rounds.bouts <- master.copy %>% group_by(Fighter) %>% summarize(Rounds = sum(as.integer(Round), na.rm = TRUE), Bouts = n())
 
-#Count the number of title defenses each fighter has had
-title.fights <- master.copy %>% group_by(Fighter) %>% filter(Title == 1) %>% summarize('Title defenses' = n())
-
-#Figure out how often, on average, each fighter has had to defend their title
-master.copy$Fight.interval <- -c(NA, diff.Date(master.copy$Date.formatted)/86400)
-champion.time <- master.copy %>% group_by(Fighter) %>% filter(Title == 1) %>% summarize('Title held' = sum(Fight.interval))
-champion.defense <- master.copy %>% group_by(Fighter) %>% filter(Title == 1) %>% summarize('Title held' = mean(Fight.interval))
+#Figure out title stats
+title.fights <- master.copy %>% group_by(Fighter) %>% filter(Title == 1) %>% summarize('Title Fights' = n())
+title.fights.won <- master.copy %>% group_by(Fighter) %>% filter(Title == 1 & Res. == 'Win') %>% summarize('Title fights won' = n())
+title.ratio <- round(title.fights.won[,2]/title.fights[,2], 2)
 
 #Compile the wins/losses stats, along with wins by knock outs
 wins <- master.copy %>% group_by(Fighter) %>% filter(Res. == 'Win') %>% summarize(Wins = n())
 kos <- master.copy %>% group_by(Fighter) %>% filter(Type == 'KO') %>% summarize(KOs = n())
 wins.bouts <- (wins$Wins)/(rounds.bouts$Bouts)
 
-champion.stats <- cbind(rounds.bouts, title.fights$`Title defenses`, wins$Wins, kos$KOs, round(ARB, 2), round(wins.bouts, 2), champion.time$`Title held`, round(champion.defense$`Average defense, in days`, 2))
-colnames(champion.stats) <- c('Fighter', 'Rounds', 'Bouts', 'Title defenses', 'Wins', 'KOs', 'ARB', 'Wins to Bouts ratio', 'Title held, in days', 'Average defense, in days')
+champion.stats <- cbind(rounds.bouts, wins$Wins, round(wins.bouts, 2), title.fights$`Title Fights`, kos$KOs, round(ARB, 2))
+colnames(champion.stats) <- c('Fighter', 'Rounds', 'Bouts', 'Wins', 'Wins to Bouts ratio','Title fights', 'KOs', 'ARB')
+
+
+#Create a matrix of rounds/KOs for all fighters, effectively a crosstab
+#First sort, according to the first title fight a champion parttook in
+boxer.index <- master.copy[master.copy$Title == 1,]
+boxer.index <- boxer.index[order(boxer.index$Fighter),]
+boxer.index <- boxer.index[order(boxer.index$Date.formatted, decreasing = FALSE),]
+boxer.index <- boxer.index[!duplicated(boxer.index$Fighter),]
+
+#Create the rounds matrix needed to compute the heatmap
+rounds.matrix <- as.data.frame.matrix(table(master.copy$Fighter, master.copy$Round), stringsAsFactors = TRUE)
+
+#Now reorder it based on the order created in boxer.index
+rounds.matrix <- rounds.matrix[rownames(boxer.index),, drop = FALSE]
+
+rounds.matrix <- rounds.matrix[,1:15]
+
+#Create the heatmap
+rounds.label <- c("Round 1", "Round 2", "Round 3", "Round 4", "Round 5", "Round 6", "Round 7", "Round 8", "Round 9", "Round 10", "Round 11", "Round 12", "Round 13", "Round 14", "Round 15")
+heatmap <- d3heatmap(rounds.matrix, scale = "row", colors = "Blues", dendrogram = "none", Rowv = FALSE, Colv = FALSE, xaxis_height = 100, yaxis_width = 300)
+
+#Compute the average length of a title fight, over time
+master.copy$Year <- format(master.copy$Date.formatted, '%Y')
+rounds.mean.hw <- master.copy %>% filter(Title.hwc == 1) %>% group_by(Year) %>% summarize(Average = mean(Round), Max = max(Round), Min = min(Round))
+
+count.pretitle <- ''
+fighter.index <- unique(master.copy$Fighter)
+for (fighter in fighter.index) {
+  temp <- master.copy %>% filter(Fighter == fighter)
+  diffs <- temp$Title[-1L] != temp$Title[-length(temp$Title)]
+  idx <- c(which(diffs), length(temp$Title))
+  count.pretitle <- rbind(count.pretitle, data.frame(fighter, idx[1]))
+  }
+
+
 
 #MISSSING FRANK BRUNO
 # troublesome boxers - Ali (5), Terrell (6 - time issue), Frasier (7, same time problem), Foreman (9), Spinks (10 - one column is missing, rows 484-530), Coetzee (16), Spinks (21), Tyson (24), 
