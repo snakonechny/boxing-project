@@ -3,6 +3,8 @@ library(stringr)
 library(stringi)
 library(plyr)
 library(dplyr)
+library(ggplot2)
+
 library(lubridate)
 library(networkD3)
 library(tidyr)
@@ -211,7 +213,20 @@ for (fighter in fighter.index) {
   count.pretitle <- rbind(count.pretitle, data.frame(fighter, idx[1]))
   }
 
+#we'll need to get rid of the NA in the first row
+count.pretitle <- count.pretitle[-1,]
 
+#and now we'll order the results of this loop according to the same logic we used earlier, by the date of the first belt challenge. I realize this isn't a very conventional method for achieving the sorting I'm looking for, but I couldn't get the rows to take on the order I wanted. Instead, I simply joined the earlier fighter list with correct ordering to my data from the loop above.
+
+colnames(count.pretitle) <- c('Fighter', 'Bouts')
+count.pretitle <- left_join(boxer.index, count.pretitle, by = 'Fighter')
+
+#first, transform the Fighter column into factors; this will preserve my desired order
+count.pretitle <- transform(count.pretitle, Fighter = factor(Fighter, levels=unique(Fighter)))
+count.pretitle$Bouts <- as.integer(count.pretitle$Bouts)
+
+#now apply a bit of ggploting to create the graph
+bouts.graph <- ggplot(count.pretitle) + geom_bar(aes(x=Fighter, y=Bouts), fill='gray', stat = 'identity') + coord_flip() + theme(axis.text.y = element_text(size=rel(.8))) + theme(panel.grid.major.x = element_blank(), panel.grid.major.y = element_line(linetype=3, color='darkgray')) + stat_smooth(aes(x=Fighter, y=Bouts, group = 1), se = FALSE) + ylab("Bouts before first belt challenge")
 
 #MISSSING FRANK BRUNO
 # troublesome boxers - Ali (5), Terrell (6 - time issue), Frasier (7, same time problem), Foreman (9), Spinks (10 - one column is missing, rows 484-530), Coetzee (16), Spinks (21), Tyson (24), 
